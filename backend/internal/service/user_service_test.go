@@ -61,29 +61,17 @@ func newTestUserService(repo repository.UserRepository) *userService {
 
 func TestUserServiceRegister(t *testing.T) {
 	cases := []struct {
-		name    string
-		repo    repository.UserRepository
-		req     *dto.RegisterRequest
-		wantErr bool
+		name     string
+		repo     repository.UserRepository
+		req      *dto.RegisterRequest
+		wantErr  bool
 		wantRole string
 	}{
 		{
-			name: "valid interviewer default role",
-			repo: &fakeUserRepo{},
-			req:  &dto.RegisterRequest{Username: "alice", Password: "secret123", DisplayName: "Alice"},
+			name:     "valid register defaults to interviewer",
+			repo:     &fakeUserRepo{},
+			req:      &dto.RegisterRequest{Username: "alice", Password: "secret123", DisplayName: "Alice"},
 			wantRole: constants.RoleInterviewer,
-		},
-		{
-			name: "explicit archivist role",
-			repo: &fakeUserRepo{},
-			req:  &dto.RegisterRequest{Username: "bob", Password: "secret123", DisplayName: "Bob", Role: constants.RoleArchivist},
-			wantRole: constants.RoleArchivist,
-		},
-		{
-			name:    "invalid role rejected",
-			repo:    &fakeUserRepo{},
-			req:     &dto.RegisterRequest{Username: "eve", Password: "secret123", DisplayName: "Eve", Role: "root"},
-			wantErr: true,
 		},
 		{
 			name:    "duplicate username rejected",
@@ -112,6 +100,19 @@ func TestUserServiceRegister(t *testing.T) {
 				t.Fatalf("password hash mismatch")
 			}
 		})
+	}
+}
+
+func TestPublicRegisterCannotEscalateRole(t *testing.T) {
+	svc := newTestUserService(&fakeUserRepo{})
+	// DTO 已不暴露 Role 字段：无论调用方如何构造，注册结果都只能是采访员。
+	req := &dto.RegisterRequest{Username: "mallory", Password: "secret123", DisplayName: "Mallory"}
+	user, err := svc.Register(req)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if user.Role != constants.RoleInterviewer {
+		t.Fatalf("public register must yield interviewer, got %s", user.Role)
 	}
 }
 

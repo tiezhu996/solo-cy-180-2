@@ -6,7 +6,6 @@ export function register(payload: {
   password: string
   display_name: string
   email?: string
-  role?: string
 }) {
   return post<User>('/auth/register', payload)
 }

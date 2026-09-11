@@ -9,18 +9,18 @@ import (
 
 // Config 保存服务运行所需的全部配置。
 type Config struct {
-	ServerPort   string `env:"SERVER_PORT" envDefault:"8080"`
-	RunMode      string `env:"RUN_MODE" envDefault:"release"`
-	DBHost       string `env:"DB_HOST" envDefault:"127.0.0.1"`
-	DBPort       string `env:"DB_PORT" envDefault:"3306"`
-	DBName       string `env:"DB_NAME" envDefault:"oralhistory_db"`
-	DBUser       string `env:"DB_USER" envDefault:"oralhistory_user"`
-	DBPassword   string `env:"DB_PASSWORD" envDefault:"oralhistory_pwd"`
-	JWTSecret    string `env:"JWT_SECRET" envDefault:"change_me_to_a_long_random_string"`
-	JWTExpireH   int    `env:"JWT_EXPIRE_HOURS" envDefault:"72"`
-	RedisAddr    string `env:"REDIS_ADDR" envDefault:"127.0.0.1:6379"`
-	RedisPass    string `env:"REDIS_PASSWORD" envDefault:""`
-	RedisDB      int    `env:"REDIS_DB" envDefault:"0"`
+	ServerPort     string `env:"SERVER_PORT" envDefault:"9180"`
+	RunMode        string `env:"RUN_MODE" envDefault:"release"`
+	DBHost         string `env:"DB_HOST" envDefault:"127.0.0.1"`
+	DBPort         string `env:"DB_PORT" envDefault:"3306"`
+	DBName         string `env:"DB_NAME" envDefault:"oralhistory_db"`
+	DBUser         string `env:"DB_USER" envDefault:"oralhistory_user"`
+	DBPassword     string `env:"DB_PASSWORD" envDefault:"oralhistory_pwd"`
+	JWTSecret      string `env:"JWT_SECRET" envDefault:"change_me_to_a_long_random_string"`
+	JWTExpireH     int    `env:"JWT_EXPIRE_HOURS" envDefault:"72"`
+	RedisAddr      string `env:"REDIS_ADDR" envDefault:"127.0.0.1:6379"`
+	RedisPass      string `env:"REDIS_PASSWORD" envDefault:""`
+	RedisDB        int    `env:"REDIS_DB" envDefault:"0"`
 	MinIOEndpoint  string `env:"MINIO_ENDPOINT" envDefault:"127.0.0.1:9000"`
 	MinIOAccessKey string `env:"MINIO_ACCESS_KEY" envDefault:"minioadmin"`
 	MinIOSecretKey string `env:"MINIO_SECRET_KEY" envDefault:"minioadmin"`

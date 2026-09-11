@@ -22,7 +22,7 @@ func TestProjectRepositoryList(t *testing.T) {
 	mock.ExpectQuery(regexp.QuoteMeta("SELECT * FROM `projects`")).
 		WillReturnRows(rows)
 
-	projects, total, err := repo.List(1, 10, "")
+	projects, total, err := repo.List(1, 10, "", 0)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}

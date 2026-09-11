@@ -46,11 +46,16 @@ func (h *ProjectHandler) Create(c *gin.Context) {
 
 // Get 查询项目详情。
 func (h *ProjectHandler) Get(c *gin.Context) {
+	actor, err := middleware.CurrentUser(c)
+	if err != nil {
+		c.Error(err)
+		return
+	}
 	id, ok := parseID(c, "id")
 	if !ok {
 		return
 	}
-	project, err := h.projectSvc.Get(id)
+	project, err := h.projectSvc.Get(actor, id)
 	if err != nil {
 		c.Error(err)
 		return
@@ -58,14 +63,19 @@ func (h *ProjectHandler) Get(c *gin.Context) {
 	util.OK(c, project)
 }
 
-// List 项目列表（可按状态筛选）。
+// List 项目列表（可按状态筛选；采访员仅返回自己负责的项目）。
 func (h *ProjectHandler) List(c *gin.Context) {
+	actor, err := middleware.CurrentUser(c)
+	if err != nil {
+		c.Error(err)
+		return
+	}
 	var p dto.PageParams
 	if !bindQuery(c, &p) {
 		return
 	}
 	p.Normalize()
-	projects, total, err := h.projectSvc.List(p.Page, p.PageSize, c.Query("status"))
+	projects, total, err := h.projectSvc.List(actor, p.Page, p.PageSize, c.Query("status"))
 	if err != nil {
 		c.Error(err)
 		return
@@ -165,7 +175,12 @@ func (h *ProjectHandler) Delete(c *gin.Context) {
 
 // Stats 项目统计。
 func (h *ProjectHandler) Stats(c *gin.Context) {
-	stats, err := h.projectSvc.Stats()
+	actor, err := middleware.CurrentUser(c)
+	if err != nil {
+		c.Error(err)
+		return
+	}
+	stats, err := h.projectSvc.Stats(actor)
 	if err != nil {
 		c.Error(err)
 		return

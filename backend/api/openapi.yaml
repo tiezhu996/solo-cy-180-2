@@ -8,21 +8,21 @@ servers:
 paths:
   /auth/register:
     post:
-      summary: 用户注册
+      summary: 用户注册（公开注册恒为 interviewer 采访员，角色由管理员另行分配）
       tags: [auth]
       requestBody:
         content:
           application/json:
             schema:
               type: object
+              required: [username, password, display_name]
               properties:
-                username: { type: string }
-                password: { type: string }
+                username: { type: string, minLength: 3 }
+                password: { type: string, minLength: 6 }
                 display_name: { type: string }
                 email: { type: string }
-                role: { type: string, enum: [admin, interviewer, archivist] }
       responses:
-        '200': { description: 注册成功 }
+        '200': { description: 注册成功，返回角色固定为 interviewer 的用户 }
   /auth/login:
     post:
       summary: 用户登录
