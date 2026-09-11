@@ -16,16 +16,16 @@ import (
 type TimelineMarkerService interface {
 	Create(actor *model.User, req *dto.CreateTimelineMarkerRequest) (*model.TimelineMarker, error)
 	// List 同时服务「按项目」与「按录音」两个接口，复用同一 service 方法。
-	List(projectID, recordingID uint) ([]model.TimelineMarker, error)
+	List(actor *model.User, projectID, recordingID uint) ([]model.TimelineMarker, error)
 	Update(actor *model.User, id uint, req *dto.UpdateTimelineMarkerRequest) (*model.TimelineMarker, error)
 	Delete(actor *model.User, id uint) error
 }
 
 type timelineMarkerService struct {
-	markerRepo repository.TimelineMarkerRepository
-	projectRepo repository.ProjectRepository
+	markerRepo    repository.TimelineMarkerRepository
+	projectRepo   repository.ProjectRepository
 	recordingRepo repository.RecordingRepository
-	logger     *slog.Logger
+	logger        *slog.Logger
 }
 
 // NewTimelineMarkerService 构造时间轴节点服务。
@@ -33,18 +33,46 @@ func NewTimelineMarkerService(markerRepo repository.TimelineMarkerRepository, pr
 	return &timelineMarkerService{markerRepo: markerRepo, projectRepo: projectRepo, recordingRepo: recordingRepo, logger: logger}
 }
 
-func (s *timelineMarkerService) Create(actor *model.User, req *dto.CreateTimelineMarkerRequest) (*model.TimelineMarker, error) {
-	if _, err := s.projectRepo.FindByID(req.ProjectID); err != nil {
+// loadProjectForRead 取项目并做读归属校验。
+func (s *timelineMarkerService) loadProjectForRead(actor *model.User, projectID uint) (*model.Project, error) {
+	project, err := s.projectRepo.FindByID(projectID)
+	if err != nil {
 		if errors.Is(err, repository.ErrNotFound) {
-			return nil, util.NewAppError(constants.CodeNotFound, fmt.Sprintf("项目 %d 不存在", req.ProjectID), err)
+			return nil, util.NewAppError(constants.CodeNotFound, fmt.Sprintf("项目 %d 不存在", projectID), err)
 		}
-		return nil, util.NewAppError(constants.CodeInternal, fmt.Sprintf("查询项目 %d 失败", req.ProjectID), err)
+		return nil, util.NewAppError(constants.CodeInternal, fmt.Sprintf("查询项目 %d 失败", projectID), err)
 	}
-	if _, err := s.recordingRepo.FindByID(req.RecordingID); err != nil {
+	if actor.Role == constants.RoleInterviewer && project.CreatedBy != actor.ID {
+		return nil, roleWriteError(actor, "项目", "访问")
+	}
+	return project, nil
+}
+
+func (s *timelineMarkerService) Create(actor *model.User, req *dto.CreateTimelineMarkerRequest) (*model.TimelineMarker, error) {
+	project, err := s.loadProjectForRead(actor, req.ProjectID)
+	if err != nil {
+		return nil, err
+	}
+	// 节点是档案整理动作：管理员、档案员可整理任意项目，采访员只能整理自己负责的项目。
+	if !canCurateProject(actor, project) {
+		s.logger.Warn(fmt.Sprintf(constants.LogRoleDenied, actor.Username, actor.Role, "timeline_marker", "create"))
+		return nil, roleWriteError(actor, "时间轴节点", "标注")
+	}
+	if err := ensureWritable(actor, project, "时间轴节点", "标注"); err != nil {
+		return nil, err
+	}
+	recording, err := s.recordingRepo.FindByID(req.RecordingID)
+	if err != nil {
 		if errors.Is(err, repository.ErrNotFound) {
 			return nil, util.NewAppError(constants.CodeNotFound, fmt.Sprintf("录音 %d 不存在", req.RecordingID), err)
 		}
 		return nil, util.NewAppError(constants.CodeInternal, fmt.Sprintf("查询录音 %d 失败", req.RecordingID), err)
+	}
+	// 节点必须对应同项目的录音，禁止把节点挂到别的项目的录音上。
+	if recording.ProjectID != req.ProjectID {
+		s.logger.Warn(fmt.Sprintf(constants.LogCrossProject, actor.Username, req.ProjectID, recording.ProjectID, "recording#"+fmt.Sprint(recording.ID)))
+		return nil, crossProjectError(actor, req.ProjectID, recording.ProjectID,
+			fmt.Sprintf("录音 %d", recording.ID))
 	}
 	marker := &model.TimelineMarker{
 		ProjectID:       req.ProjectID,
@@ -61,7 +89,21 @@ func (s *timelineMarkerService) Create(actor *model.User, req *dto.CreateTimelin
 	return marker, nil
 }
 
-func (s *timelineMarkerService) List(projectID, recordingID uint) ([]model.TimelineMarker, error) {
+func (s *timelineMarkerService) List(actor *model.User, projectID, recordingID uint) ([]model.TimelineMarker, error) {
+	// 按录音查询时，先解析录音所属项目以统一做归属校验。
+	if projectID == 0 && recordingID > 0 {
+		recording, err := s.recordingRepo.FindByID(recordingID)
+		if err != nil {
+			if errors.Is(err, repository.ErrNotFound) {
+				return nil, util.NewAppError(constants.CodeNotFound, fmt.Sprintf("录音 %d 不存在", recordingID), err)
+			}
+			return nil, util.NewAppError(constants.CodeInternal, fmt.Sprintf("查询录音 %d 失败", recordingID), err)
+		}
+		projectID = recording.ProjectID
+	}
+	if _, err := s.loadProjectForRead(actor, projectID); err != nil {
+		return nil, err
+	}
 	var (
 		markers []model.TimelineMarker
 		err     error
@@ -85,6 +127,16 @@ func (s *timelineMarkerService) Update(actor *model.User, id uint, req *dto.Upda
 		}
 		return nil, util.NewAppError(constants.CodeInternal, fmt.Sprintf("查询时间轴节点 %d 失败", id), err)
 	}
+	project, err := s.loadProjectForRead(actor, marker.ProjectID)
+	if err != nil {
+		return nil, err
+	}
+	if !canCurateProject(actor, project) {
+		return nil, roleWriteError(actor, "时间轴节点", "修改")
+	}
+	if err := ensureWritable(actor, project, "时间轴节点", "修改"); err != nil {
+		return nil, err
+	}
 	if req.TimestampSecond != 0 {
 		marker.TimestampSecond = req.TimestampSecond
 	}
@@ -102,11 +154,22 @@ func (s *timelineMarkerService) Update(actor *model.User, id uint, req *dto.Upda
 }
 
 func (s *timelineMarkerService) Delete(actor *model.User, id uint) error {
-	if _, err := s.markerRepo.FindByID(id); err != nil {
+	marker, err := s.markerRepo.FindByID(id)
+	if err != nil {
 		if errors.Is(err, repository.ErrNotFound) {
 			return util.NewAppError(constants.CodeNotFound, fmt.Sprintf("时间轴节点 %d 不存在", id), err)
 		}
 		return util.NewAppError(constants.CodeInternal, fmt.Sprintf("查询时间轴节点 %d 失败", id), err)
+	}
+	project, err := s.loadProjectForRead(actor, marker.ProjectID)
+	if err != nil {
+		return err
+	}
+	if !canCurateProject(actor, project) {
+		return roleWriteError(actor, "时间轴节点", "删除")
+	}
+	if err := ensureWritable(actor, project, "时间轴节点", "删除"); err != nil {
+		return err
 	}
 	if err := s.markerRepo.Delete(id); err != nil {
 		return util.NewAppError(constants.CodeInternal, fmt.Sprintf("删除时间轴节点 %d 失败", id), err)

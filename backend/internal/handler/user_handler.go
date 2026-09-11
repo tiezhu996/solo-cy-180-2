@@ -80,8 +80,13 @@ func (h *UserHandler) List(c *gin.Context) {
 	util.OK(c, gin.H{"list": users, "total": total, "page": p.Page, "page_size": p.PageSize})
 }
 
-// UpdateRole 更新用户角色（管理员）。
+// UpdateRole 更新用户角色（仅管理员；公开注册无法自选角色）。
 func (h *UserHandler) UpdateRole(c *gin.Context) {
+	actor, err := middleware.CurrentUser(c)
+	if err != nil {
+		c.Error(err)
+		return
+	}
 	id, ok := parseID(c, "id")
 	if !ok {
 		return
@@ -92,20 +97,25 @@ func (h *UserHandler) UpdateRole(c *gin.Context) {
 	if !bindJSON(c, &req) {
 		return
 	}
-	if err := h.userSvc.UpdateRole(id, req.Role); err != nil {
+	if err := h.userSvc.UpdateRole(actor, id, req.Role); err != nil {
 		c.Error(err)
 		return
 	}
 	util.OKMessage(c, constants.MsgOK, nil)
 }
 
-// Delete 删除用户（管理员）。
+// Delete 删除用户（仅管理员）。
 func (h *UserHandler) Delete(c *gin.Context) {
+	actor, err := middleware.CurrentUser(c)
+	if err != nil {
+		c.Error(err)
+		return
+	}
 	id, ok := parseID(c, "id")
 	if !ok {
 		return
 	}
-	if err := h.userSvc.Delete(id); err != nil {
+	if err := h.userSvc.Delete(actor, id); err != nil {
 		c.Error(err)
 		return
 	}

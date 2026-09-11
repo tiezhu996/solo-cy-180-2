@@ -13,13 +13,15 @@ import (
 type ProjectRepository interface {
 	Create(project *model.Project) error
 	FindByID(id uint) (*model.Project, error)
-	List(page, pageSize int, status string) ([]model.Project, int64, error)
+	// List creatorID > 0 时仅返回该用户负责的项目；为 0 时返回全部。
+	List(page, pageSize int, status string, creatorID uint) ([]model.Project, int64, error)
 	ListByUser(userID uint, page, pageSize int) ([]model.Project, int64, error)
 	FindByIDForUpdate(id uint) (*model.Project, error)
 	Update(project *model.Project) error
 	UpdateStatus(project *model.Project) error
 	Delete(id uint) error
 	Count() (int64, error)
+	CountByCreator(creatorID uint) (int64, error)
 }
 
 type projectRepository struct {
@@ -49,12 +51,15 @@ func (r *projectRepository) FindByID(id uint) (*model.Project, error) {
 	return &project, nil
 }
 
-func (r *projectRepository) List(page, pageSize int, status string) ([]model.Project, int64, error) {
+func (r *projectRepository) List(page, pageSize int, status string, creatorID uint) ([]model.Project, int64, error) {
 	var projects []model.Project
 	var total int64
 	q := r.db.Model(&model.Project{})
 	if status != "" {
 		q = q.Where("status = ?", status)
+	}
+	if creatorID > 0 {
+		q = q.Where("created_by = ?", creatorID)
 	}
 	if err := q.Count(&total).Error; err != nil {
 		return nil, 0, fmt.Errorf("count projects: %w", err)
@@ -125,6 +130,18 @@ func (r *projectRepository) Count() (int64, error) {
 	var total int64
 	if err := r.db.Model(&model.Project{}).Count(&total).Error; err != nil {
 		return 0, fmt.Errorf("count projects: %w", err)
+	}
+	return total, nil
+}
+
+func (r *projectRepository) CountByCreator(creatorID uint) (int64, error) {
+	var total int64
+	q := r.db.Model(&model.Project{})
+	if creatorID > 0 {
+		q = q.Where("created_by = ?", creatorID)
+	}
+	if err := q.Count(&total).Error; err != nil {
+		return 0, fmt.Errorf("count projects by creator %d: %w", creatorID, err)
 	}
 	return total, nil
 }

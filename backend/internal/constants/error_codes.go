@@ -3,7 +3,7 @@ package constants
 
 // 统一响应与错误码。
 const (
-	CodeOK              = 0    // 成功
+	CodeOK              = 0     // 成功
 	CodeBadRequest      = 40000 // 参数错误
 	CodeUnauthorized    = 40100 // 未认证
 	CodeForbidden       = 40300 // 无权限
@@ -17,6 +17,8 @@ const (
 	CodeProjectStatus   = 40902 // 项目状态流转非法
 	CodeRecordingStatus = 40903 // 录音状态流转非法
 	CodeMarkerConflict  = 40904 // 时间轴节点冲突
+	CodeArchivedWrite   = 40905 // 项目已归档，禁止写入
+	CodeCrossProject    = 40906 // 跨项目写入：子资源不属于同一项目
 )
 
 // 错误码对应的默认文案。
@@ -35,6 +37,8 @@ var errorMessages = map[int]string{
 	CodeProjectStatus:   "project status transition not allowed",
 	CodeRecordingStatus: "recording status transition not allowed",
 	CodeMarkerConflict:  "timeline marker conflict",
+	CodeArchivedWrite:   "project archived, write rejected",
+	CodeCrossProject:    "cross project write rejected",
 }
 
 // Message 返回错误码对应的默认文案。

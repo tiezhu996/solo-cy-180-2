@@ -16,12 +16,13 @@ import (
 
 // UserService 用户业务接口。
 type UserService interface {
+	// Register 公开注册：注册成功一律为采访员角色，任何越权角色都无法通过注册获得。
 	Register(req *dto.RegisterRequest) (*model.User, error)
 	Login(req *dto.LoginRequest) (*dto.LoginResponse, error)
 	Me(userID uint) (*model.User, error)
 	List(page, pageSize int) ([]model.User, int64, error)
-	UpdateRole(userID uint, role string) error
-	Delete(userID uint) error
+	UpdateRole(actor *model.User, userID uint, role string) error
+	Delete(actor *model.User, userID uint) error
 }
 
 type userService struct {
@@ -36,13 +37,8 @@ func NewUserService(userRepo repository.UserRepository, cfg *config.Config, logg
 }
 
 func (s *userService) Register(req *dto.RegisterRequest) (*model.User, error) {
-	role := req.Role
-	if role == "" {
-		role = constants.RoleInterviewer
-	}
-	if !constants.ValidRoles(role) {
-		return nil, util.NewAppError(constants.CodeValidation, fmt.Sprintf("用户角色 %s 不合法", role), nil)
-	}
+	// 公开注册只能得到采访员角色；忽略请求中可能伪造的任何角色信息。
+	role := constants.RoleInterviewer
 	hash, err := util.HashPassword(req.Password)
 	if err != nil {
 		return nil, util.NewAppError(constants.CodeInternal, "用户密码加密失败", err)
@@ -101,7 +97,7 @@ func (s *userService) List(page, pageSize int) ([]model.User, int64, error) {
 	return users, total, nil
 }
 
-func (s *userService) UpdateRole(userID uint, role string) error {
+func (s *userService) UpdateRole(actor *model.User, userID uint, role string) error {
 	if !constants.ValidRoles(role) {
 		return util.NewAppError(constants.CodeValidation, fmt.Sprintf("用户角色 %s 不合法", role), nil)
 	}
@@ -109,15 +105,23 @@ func (s *userService) UpdateRole(userID uint, role string) error {
 	if err != nil {
 		return util.NewAppError(constants.CodeNotFound, fmt.Sprintf("用户 %d 不存在", userID), err)
 	}
+	if actor.ID == user.ID && role != constants.RoleAdmin {
+		return util.NewAppError(constants.CodeForbidden, "管理员不能取消自己的管理员角色", nil)
+	}
+	from := user.Role
 	user.Role = role
 	if err := s.userRepo.Update(user); err != nil {
 		return util.NewAppError(constants.CodeInternal, fmt.Sprintf("更新用户 %d 角色失败", userID), err)
 	}
-	s.logger.Info(fmt.Sprintf(constants.LogUserUpdate, "admin", user.Username))
+	s.logger.Info(fmt.Sprintf(constants.LogUserUpdate, actor.Username, user.Username))
+	s.logger.Info(fmt.Sprintf("user role change by=%s target=%s from=%s to=%s", actor.Username, user.Username, from, role))
 	return nil
 }
 
-func (s *userService) Delete(userID uint) error {
+func (s *userService) Delete(actor *model.User, userID uint) error {
+	if actor.ID == userID {
+		return util.NewAppError(constants.CodeForbidden, "不能删除当前登录的管理员账号", nil)
+	}
 	user, err := s.userRepo.FindByID(userID)
 	if err != nil {
 		return util.NewAppError(constants.CodeNotFound, fmt.Sprintf("用户 %d 不存在", userID), err)
@@ -128,6 +132,7 @@ func (s *userService) Delete(userID uint) error {
 	if err := s.userRepo.Delete(userID); err != nil {
 		return util.NewAppError(constants.CodeInternal, fmt.Sprintf("删除用户 %d 失败", userID), err)
 	}
+	s.logger.Info(fmt.Sprintf("user delete by=%s target=%s", actor.Username, user.Username))
 	return nil
 }
 

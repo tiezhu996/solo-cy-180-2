@@ -8,11 +8,14 @@ import { useProjectStore } from '../../stores/projectStore'
 import { useQuestionStore } from '../../stores/questionStore'
 import { useRecordingStore } from '../../stores/recordingStore'
 import { useTimelineStore } from '../../stores/timelineStore'
+import { useAuthStore } from '../../stores/authStore'
 import { formatDuration } from '../../utils/format'
+import { canCurate, canManageContent } from '../../utils/permission'
 
 export default function InterviewPage() {
   const [params, setParams] = useSearchParams()
   const selectedProject = Number(params.get('project_id')) || 0
+  const user = useAuthStore((s) => s.user)
   const { projects, fetchList } = useProjectStore()
   const { questions, fetchByProject } = useQuestionStore()
   const { fetchByProject: fetchRecordings } = useRecordingStore()
@@ -22,6 +25,11 @@ export default function InterviewPage() {
   useEffect(() => {
     fetchList({ page: 1, page_size: 100 })
   }, [fetchList])
+
+  const selected = projects.find((p) => p.id === selectedProject)
+  // 采访工作台的录音采集只对「可维护该项目采集内容」的角色开放；档案员不可采集。
+  const canRecordNow = !!user && !!selected && canManageContent(user.role, user.id, selected)
+  const canCurateNow = !!user && !!selected && canCurate(user.role, user.id, selected)
 
   useEffect(() => {
     if (selectedProject) {
@@ -89,6 +97,8 @@ export default function InterviewPage() {
             <RecorderPanel
               projectId={selectedProject}
               questionId={activeQuestion}
+              canRecord={canRecordNow}
+              canCurate={canCurateNow}
               onRecorded={(summary) => {
                 fetchRecordings(selectedProject)
                 setMessage(summary)
@@ -105,10 +115,14 @@ export default function InterviewPage() {
 function RecorderPanel({
   projectId,
   questionId,
+  canRecord,
+  canCurate,
   onRecorded,
 }: {
   projectId: number
   questionId: number
+  canRecord: boolean
+  canCurate: boolean
   onRecorded: (msg: string) => void
 }) {
   const { create, uploadAudio, updateSummary, fetchByQuestion } = useRecordingStore()
@@ -181,20 +195,26 @@ function RecorderPanel({
   }
 
   const addMarker = async (recordingId: number, label: string) => {
-    await createMarker({
-      project_id: projectId,
-      recording_id: recordingId,
-      timestamp_second: 0,
-      label,
-    })
-    await fetchByRecording(recordingId)
+    try {
+      await createMarker({
+        project_id: projectId,
+        recording_id: recordingId,
+        timestamp_second: 0,
+        label,
+      })
+      await fetchByRecording(recordingId)
+    } catch (e) {
+      onRecorded(e instanceof Error ? e.message : '节点标注被拒绝')
+    }
   }
 
   return (
     <section className="card">
       <div className="card-title">录音面板</div>
       <div className="recorder-box">
-        {uploading > 0 ? (
+        {!canRecord ? (
+          <div className="muted">当前角色无权在此项目采集录音（仅项目负责人/管理员可采集；归档项目只读）。</div>
+        ) : uploading > 0 ? (
           <div className="upload-progress">
             上传中… {uploading}%
             <div className="progress-bar">
@@ -231,51 +251,59 @@ function RecorderPanel({
                 <span className="muted">{formatDuration(r.duration_seconds)}</span>
               </div>
               <AudioPlayer recordingId={r.id} durationSeconds={r.duration_seconds} />
-              <div className="summary-edit">
-                <input
-                  value={summaryDraft || r.summary}
-                  placeholder="写一句话摘要"
-                  onChange={(e) => setSummaryDraft(e.target.value)}
-                />
-                <button
-                  className="btn btn-plain btn-small"
-                  disabled={!summaryDraft.trim()}
-                  onClick={async () => {
-                    await updateSummary(r.id, summaryDraft.trim())
-                    setSummaryDraft('')
-                    reload()
-                  }}
-                >
-                  保存摘要
-                </button>
-              </div>
-              <div className="marker-actions">
-                <span className="muted">时间轴节点：</span>
-                {markers
-                  .filter((m) => m.recording_id === r.id)
-                  .map((m) => (
-                    <span key={m.id} className="marker-chip">
-                      {m.label}
-                    </span>
-                  ))}
-                <input
-                  placeholder="新增节点，如：讲到参军经历"
-                  style={{ maxWidth: 220 }}
-                  id={`marker-input-${r.id}`}
-                />
-                <button
-                  className="btn btn-plain btn-small"
-                  onClick={() => {
-                    const input = document.getElementById(`marker-input-${r.id}`) as HTMLInputElement
-                    if (input?.value.trim()) {
-                      addMarker(r.id, input.value.trim())
-                      input.value = ''
-                    }
-                  }}
-                >
-                  ＋ 标注
-                </button>
-              </div>
+              {canCurate && (
+                <div className="summary-edit">
+                  <input
+                    value={summaryDraft || r.summary}
+                    placeholder="写一句话摘要"
+                    onChange={(e) => setSummaryDraft(e.target.value)}
+                  />
+                  <button
+                    className="btn btn-plain btn-small"
+                    disabled={!summaryDraft.trim()}
+                    onClick={async () => {
+                      try {
+                        await updateSummary(r.id, summaryDraft.trim())
+                        setSummaryDraft('')
+                        reload()
+                      } catch (e) {
+                        onRecorded(e instanceof Error ? e.message : '摘要保存被拒绝')
+                      }
+                    }}
+                  >
+                    保存摘要
+                  </button>
+                </div>
+              )}
+              {canCurate && (
+                <div className="marker-actions">
+                  <span className="muted">时间轴节点：</span>
+                  {markers
+                    .filter((m) => m.recording_id === r.id)
+                    .map((m) => (
+                      <span key={m.id} className="marker-chip">
+                        {m.label}
+                      </span>
+                    ))}
+                  <input
+                    placeholder="新增节点，如：讲到参军经历"
+                    style={{ maxWidth: 220 }}
+                    id={`marker-input-${r.id}`}
+                  />
+                  <button
+                    className="btn btn-plain btn-small"
+                    onClick={() => {
+                      const input = document.getElementById(`marker-input-${r.id}`) as HTMLInputElement
+                      if (input?.value.trim()) {
+                        addMarker(r.id, input.value.trim())
+                        input.value = ''
+                      }
+                    }}
+                  >
+                    ＋ 标注
+                  </button>
+                </div>
+              )}
             </div>
           ))}
         </div>

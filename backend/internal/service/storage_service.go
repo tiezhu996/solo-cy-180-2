@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"time"
 
 	"github.com/minio/minio-go/v7"
 	"github.com/minio/minio-go/v7/pkg/credentials"
@@ -36,9 +37,22 @@ func NewStorageService(cfg *config.Config, logger *slog.Logger) (StorageService,
 		return nil, fmt.Errorf("init minio client: %w", err)
 	}
 	ctx := context.Background()
-	exists, err := client.BucketExists(ctx, cfg.MinIOBucket)
-	if err != nil {
-		return nil, fmt.Errorf("check minio bucket %s: %w", cfg.MinIOBucket, err)
+	// 容器编排中 MinIO 可能刚标记 healthy 还在短暂初始化，做有界重试避免后端启动即崩溃重启。
+	const (
+		maxAttempts = 12
+		retryDelay  = 2 * time.Second
+	)
+	var exists bool
+	for attempt := 1; attempt <= maxAttempts; attempt++ {
+		exists, err = client.BucketExists(ctx, cfg.MinIOBucket)
+		if err == nil {
+			break
+		}
+		logger.Warn("minio bucket probe failed, retrying", "endpoint", cfg.MinIOEndpoint, "attempt", attempt, "error", err)
+		if attempt == maxAttempts {
+			return nil, fmt.Errorf("check minio bucket %s after %d attempts: %w", cfg.MinIOBucket, maxAttempts, err)
+		}
+		time.Sleep(retryDelay)
 	}
 	if !exists {
 		if err := client.MakeBucket(ctx, cfg.MinIOBucket, minio.MakeBucketOptions{}); err != nil {

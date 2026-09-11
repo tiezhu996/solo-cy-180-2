@@ -51,11 +51,16 @@ func (h *RecordingHandler) Create(c *gin.Context) {
 
 // Get 查询录音详情。
 func (h *RecordingHandler) Get(c *gin.Context) {
+	actor, err := middleware.CurrentUser(c)
+	if err != nil {
+		c.Error(err)
+		return
+	}
 	id, ok := parseID(c, "id")
 	if !ok {
 		return
 	}
-	recording, err := h.recordingSvc.Get(id)
+	recording, err := h.recordingSvc.Get(actor, id)
 	if err != nil {
 		c.Error(err)
 		return
@@ -65,6 +70,11 @@ func (h *RecordingHandler) Get(c *gin.Context) {
 
 // List 录音列表（project_id 或 question_id 二选一，复用同一 service 方法）。
 func (h *RecordingHandler) List(c *gin.Context) {
+	actor, err := middleware.CurrentUser(c)
+	if err != nil {
+		c.Error(err)
+		return
+	}
 	var projectID, questionID uint
 	if raw := c.Query("project_id"); raw != "" {
 		if v, err := strconv.ParseUint(raw, 10, 64); err == nil {
@@ -80,7 +90,7 @@ func (h *RecordingHandler) List(c *gin.Context) {
 		util.Fail(c, http.StatusBadRequest, constants.CodeBadRequest, "录音列表查询必须提供 project_id 或 question_id")
 		return
 	}
-	recordings, err := h.recordingSvc.List(projectID, questionID)
+	recordings, err := h.recordingSvc.List(actor, projectID, questionID)
 	if err != nil {
 		c.Error(err)
 		return
@@ -183,11 +193,16 @@ func (h *RecordingHandler) UploadAudio(c *gin.Context) {
 
 // PlayAudio 从 MinIO 流式返回录音音频。
 func (h *RecordingHandler) PlayAudio(c *gin.Context) {
+	actor, err := middleware.CurrentUser(c)
+	if err != nil {
+		c.Error(err)
+		return
+	}
 	id, ok := parseID(c, "id")
 	if !ok {
 		return
 	}
-	recording, err := h.recordingSvc.Get(id)
+	recording, err := h.recordingSvc.Get(actor, id)
 	if err != nil {
 		c.Error(err)
 		return

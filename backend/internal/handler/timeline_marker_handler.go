@@ -48,6 +48,11 @@ func (h *TimelineMarkerHandler) Create(c *gin.Context) {
 
 // List 时间轴节点列表（project_id 或 recording_id 二选一，复用同一 service 方法）。
 func (h *TimelineMarkerHandler) List(c *gin.Context) {
+	actor, err := middleware.CurrentUser(c)
+	if err != nil {
+		c.Error(err)
+		return
+	}
 	var projectID, recordingID uint
 	if raw := c.Query("project_id"); raw != "" {
 		if v, err := strconv.ParseUint(raw, 10, 64); err == nil {
@@ -63,7 +68,7 @@ func (h *TimelineMarkerHandler) List(c *gin.Context) {
 		util.Fail(c, http.StatusBadRequest, constants.CodeBadRequest, "时间轴节点查询必须提供 project_id 或 recording_id")
 		return
 	}
-	markers, err := h.markerSvc.List(projectID, recordingID)
+	markers, err := h.markerSvc.List(actor, projectID, recordingID)
 	if err != nil {
 		c.Error(err)
 		return

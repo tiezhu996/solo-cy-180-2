@@ -3,10 +3,10 @@ package constants
 
 // 录音状态定义。
 const (
-	RecordingStatusRecording   = "recording"   // 录制中：浏览器端正在采集
-	RecordingStatusProcessing  = "processing"  // 处理中：已上传等待转码
-	RecordingStatusReady       = "ready"       // 就绪：可播放
-	RecordingStatusFailed      = "failed"      // 失败：上传或处理失败
+	RecordingStatusRecording  = "recording"  // 录制中：浏览器端正在采集
+	RecordingStatusProcessing = "processing" // 处理中：已上传等待转码
+	RecordingStatusReady      = "ready"      // 就绪：可播放
+	RecordingStatusFailed     = "failed"     // 失败：上传或处理失败
 )
 
 // ValidRecordingStatus 校验录音状态是否合法。

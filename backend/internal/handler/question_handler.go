@@ -50,11 +50,16 @@ func (h *QuestionHandler) Create(c *gin.Context) {
 
 // ListByProject 项目问题列表。
 func (h *QuestionHandler) ListByProject(c *gin.Context) {
+	actor, err := middleware.CurrentUser(c)
+	if err != nil {
+		c.Error(err)
+		return
+	}
 	projectID, ok := parseID(c, "id")
 	if !ok {
 		return
 	}
-	questions, err := h.questionSvc.ListByProject(projectID)
+	questions, err := h.questionSvc.ListByProject(actor, projectID)
 	if err != nil {
 		c.Error(err)
 		return
